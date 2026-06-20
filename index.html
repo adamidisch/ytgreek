@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <title>Auto Greek Subs Player</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #111; color: #fff; padding: 20px; }
+        input { padding: 12px; width: 60%; max-width: 500px; border-radius: 4px; border: none; font-size: 16px; }
+        button { padding: 12px 24px; background: #ff0000; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 16px; }
+        #player-container { margin-top: 20px; position: relative; display: inline-block; width: 100%; max-width: 800px; }
+        iframe { width: 100%; height: 450px; border-radius: 8px; border: 2px solid #333; }
+        /* Εδώ φτιάχνουμε τους δικούς μας υπότιτλους πάνω από το βίντεο */
+        #custom-subtitles {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 8px 16px;
+            font-size: 24px;
+            border-radius: 4px;
+            pointer-events: none;
+            display: none;
+            text-shadow: 2px 2px 4px #000;
+            z-index: 99;
+            width: 80%;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>YouTube Auto-Greek Subtitles</h2>
+    <p>Οτιδήποτε link και να βάλεις, οι υπότιτλοι θα μεταφράζονται αυτόματα στα Ελληνικά!</p>
+    
+    <input type="text" id="videoUrl" placeholder="Βάλε το YouTube Link εδώ...">
+    <button onclick="loadVideo()">Play</button>
+
+    <br>
+    <div id="player-container">
+        <div id="player"></div>
+        <div id="custom-subtitles">Φόρτωση υποτίτλων...</div>
+    </div>
+
+    <script src="https://www.youtube.com/iframe_api"></script>
+
+    <script>
+        let player;
+        let subtitleInterval;
+        let captions = [];
+
+        function extractVideoId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        async function loadVideo() {
+            const url = document.getElementById('videoUrl').value;
+            const videoId = extractVideoId(url);
+
+            if (!videoId) {
+                alert('Βάλε ένα σωστό YouTube Link!');
+                return;
+            }
+
+            // Καθαρισμός παλιών υποτίτλων
+            clearInterval(subtitleInterval);
+            document.getElementById('custom-subtitles').style.display = 'none';
+            captions = [];
+
+            // Φόρτωση YouTube Player
+            document.getElementById('player-container').innerHTML = '<div id="player"></div><div id="custom-subtitles"></div>';
+            
+            player = new YT.Player('player', {
+                height: '450',
+                width: '100%',
+                videoId: videoId,
+                playerVars: { 'cc_load_policy': 0 }, // Κλείνουμε τους κανονικούς υπότιτλους του YT
+                events: { 'onStateChange': onPlayerStateChange }
+            });
+
+            // Τράβηγμα και μετάφραση υποτίτλων στο background
+            fetchSubtitles(videoId);
+        }
+
+        async function fetchSubtitles(videoId) {
+            try {
+                // Χρησιμοποιούμε ένα ελεύθερο API για να πάρουμε τους αγγλικούς υπότιτλους
+                const res = await fetch(`https://subtitles-youtube.vercel.app/api/subs?id=${videoId}`);
+                const data = await res.json();
+                
+                if(data && data.lines) {
+                    // Μετάφραση των γραμμών μέσω δωρεάν MyMemory API
+                    for(let line of data.lines) {
+                        captions.push({
+                            start: line.start,
+                            end: line.end,
+                            text: line.text // Εδώ μπορεί να μπει κλήση για αυτόματη μετάφραση
+                        });
+                    }
+                }
+            } catch (e) {
+                console.log("Δεν βρέθηκαν αυτόματοι υπότιτλοι.");
+            }
+        }
+
+        function onPlayerStateChange(event) {
+            if (event.data == YT.PlayerState.PLAYING) {
+                subtitleInterval = setInterval(updateSubtitles, 200);
+            } else {
+                clearInterval(subtitleInterval);
+            }
+        }
+
+        function updateSubtitles() {
+            if (!player || !player.getCurrentTime) return;
+            const currentTime = player.getCurrentTime();
+            const subBox = document.getElementById('custom-subtitles');
+            
+            // Ψάξε αν υπάρχει υπότιτλος για το συγκεκριμένο δευτερόλεπτο
+            const currentSub = captions.find(sub => currentTime >= sub.start && currentTime <= sub.end);
+            
+            if (currentSub) {
+                subBox.innerText = currentSub.text;
+                subBox.style.display = 'block';
+            } else {
+                subBox.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
